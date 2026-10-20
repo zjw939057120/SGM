@@ -296,7 +296,7 @@ int gpio_init(void) {
         //模式1：DI开关信号输入
         //模式2：AI电流信号输入
         //模式3：UI电压信号输入
-        gpio_group_mode(gpio_group[i],2);
+        gpio_group_mode(gpio_group[i],3);
     }
     return 0;
 }
@@ -324,7 +324,7 @@ int main(int argc, char *argv[])
 	{
     fflush(stdout);
     usleep(200*1000);
-    SGM51242_ADC_Repeat_Sampling();
+    SGM51242_ADC_Single_Sampling();
 	}
 	return 0;
 }
