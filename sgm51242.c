@@ -3,9 +3,9 @@
 #include <string.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <stdlib.h>
 #include <sys/ioctl.h>
 #include <linux/spi/spidev.h>
-#include <stdlib.h>
 #include "sgm51242.h"
 
 #define SPI_DEVICE "/dev/spidev4.0"
@@ -14,9 +14,9 @@ static int spi_fd = -1;
 
 /*
  * 打开 SPI 设备并配置模式、位宽、速率。
- * 对应原来的 SPI1_Init。
+ * 对应原来的 SPI4_Init。
  */
-int SPI1_Init(uint16_t width, uint16_t cpol, uint16_t cpha, uint32_t speed_hz)
+int SPI4_Init(uint16_t width, uint16_t cpol, uint16_t cpha, uint32_t speed_hz)
 {
     uint8_t mode = 0;
     uint8_t bits;
@@ -64,13 +64,11 @@ fail:
 }
 
 /*
- * 对应原来的 SPI1_ReadWrite：
+ * 对应原来的 SPI4_ReadWrite：
  * 发送 TxData，同时返回 RxData。
  *
- * width=16 时，一次传输 2 字节；
- * width=8  时，只使用低 8 位，传输 1 字节。
  */
-uint16_t SPI1_ReadWrite(uint16_t TxData)
+uint16_t SPI4_ReadWrite(uint16_t TxData)
 {
     uint16_t rx = 0;
 
@@ -97,17 +95,17 @@ void SGM51242_interface_init(void)
 {
     /*
      * 原来 STM32 的调用类似：
-     * SPI1_Init(SPI_DataSize_16b, SPI_CPOL_High, SPI_CPHA_1Edge, SPI_BaudRatePrescaler_4);
+     * SPI4_Init(SPI_DataSize_16b, SPI_CPOL_High, SPI_CPHA_1Edge, SPI_BaudRatePrescaler_4);
      *
      * Linux 下需要把 prescaler 换成实际 SPI 时钟频率，例如 21MHz：
      */
-    if (SPI1_Init(16, 1, 0, 21000000) < 0) {
-        fprintf(stderr, "SPI1 init failed\n");
+    if (SPI4_Init(16, 1, 0, 21000000) < 0) {
+        fprintf(stderr, "SPI4 init failed\n");
         return;
     }
 
-    /* 可选：发送一次 dummy 数据，类似原来 SPI1_ReadWrite(0xFF); */
-    SPI1_ReadWrite(0xFFFF);
+    /* 可选：发送一次 dummy 数据，类似原来 SPI4_ReadWrite(0xFF); */
+    SPI4_ReadWrite(0xFF);
 }
 
 uint16_t SGM51242_write_register(uint16_t addr, uint16_t value)
@@ -121,7 +119,7 @@ uint16_t SGM51242_write_register(uint16_t addr, uint16_t value)
 	
 	
 	
-	data_out = SPI1_ReadWrite(data_in);
+	data_out = SPI4_ReadWrite(data_in);
 	
 	
 	return data_out;
@@ -138,13 +136,13 @@ uint16_t SGM51242_read_register(uint16_t addr)
 	
 
 	
-	data_out = SPI1_ReadWrite(data_in);
+	data_out = SPI4_ReadWrite(data_in);
 	
 	usleep(1);
 	
 
 	data_in = 0x0000;
-	data_out = SPI1_ReadWrite(data_in);
+	data_out = SPI4_ReadWrite(data_in);
 	
 	
 	return data_out;
@@ -159,7 +157,7 @@ uint16_t SGM51242_read_ADC(void)
 	
 	usleep(6);
 	
-	data_out = SPI1_ReadWrite(0x0000);
+	data_out = SPI4_ReadWrite(0x0000);
 	
 	usleep(3);
 	
@@ -167,7 +165,7 @@ uint16_t SGM51242_read_ADC(void)
 	
 }
 
-void ADC_Single_Sampling(void)
+void SGM51242_ADC_Single_Sampling(void)
 {
 	uint16_t reg_val;
 	uint16_t adc_seq;
@@ -203,7 +201,7 @@ void ADC_Single_Sampling(void)
 	SGM51242_write_register(ADC_SEQUENCE_CTRL, 0x0000);
 }
 
-void ADC_Repeat_Sampling(void)
+void SGM51242_ADC_Repeat_Sampling(void)
 {
 	uint16_t reg_val;
 	uint16_t adc_seq;
@@ -260,10 +258,10 @@ int gpio_group[GPIO_GROUP_COUNT][3] = {
  * @brief 设置GPIO组模式
  * 
  * @param group GPIO组指针
+ * @param mode
  * 模式1：DI开关信号输入，GPIO配置：011，短接输入：电压为0V，断开输入：电压为：4.13V
  * 模式2：AI电流信号输入，GPIO配置：101，0mA输入：电压为0V，10mA输入：电压为2.7V，20mA输入：电压为：4.13V
  * 模式3：UI电压信号输入，GPIO配置：110，0V输入：电压为0V，5V输入：电压为2.7V，10V输入：电压为：4.13V
- * @param mode 模式，1：输入，2：输出，3：高电平输出
  * @return int 0：成功，-1：失败
  */
 int gpio_group_mode(int *group,int mode){
@@ -298,7 +296,7 @@ int gpio_init(void) {
         //模式1：DI开关信号输入
         //模式2：AI电流信号输入
         //模式3：UI电压信号输入
-        gpio_group_mode(gpio_group[i],1);
+        gpio_group_mode(gpio_group[i],2);
     }
     return 0;
 }
@@ -310,23 +308,23 @@ int main(int argc, char *argv[])
 	SGM51242_interface_init();
 	
 	SGM51242_write_register(SOFT_RESET, 0x05AC);//Send Reset
-	usleep(2);
+	usleep(2*1000);
 	
 	SGM51242_write_register(CH_PWR_DOWN_AND_REF_CTRL, 0x0200);//Enable Internal Reference
-	usleep(2); //After enabling the internal reference, delay by 2ms and wait for the internal reference to be fully established
+	usleep(2*1000); //After enabling the internal reference, delay by 2ms and wait for the internal reference to be fully established
 	
 	// printf("Single sampling test!\r\n");
-	// ADC_Single_Sampling();
+	// SGM51242_ADC_Single_Sampling();
 	
-	// usleep(1000);	
+	// usleep(1000*1000);
 	// printf("Repeat sampling test!\r\n");
-	// ADC_Repeat_Sampling();
+	// SGM51242_ADC_Repeat_Sampling();
 	
 	while(1)
 	{
     fflush(stdout);
-    usleep(1000 * 500);
-    ADC_Repeat_Sampling();			
+    usleep(200*1000);
+    SGM51242_ADC_Repeat_Sampling();
 	}
 	return 0;
 }
