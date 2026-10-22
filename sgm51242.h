@@ -1,6 +1,8 @@
 #ifndef __SGM51242_H__
 #define __SGM51242_H__
 
+#include <stdint.h>
+
 #if __cplusplus
 extern "C" {
 #endif
@@ -18,26 +20,24 @@ extern "C" {
 #define CH_PWR_DOWN_AND_REF_CTRL		0x0B
 #define SOFT_RESET									0x0F
 
-int SPI4_Init(uint16_t width, uint16_t cpol, uint16_t cpha, uint32_t rate);
+int SGM51242_SPI_Init(uint16_t width, uint16_t cpol, uint16_t cpha, uint32_t rate);
  
-uint16_t SPI4_ReadWrite(uint16_t TxData);
+uint16_t SGM51242_SPI_ReadWrite(uint16_t TxData);
 
 void SGM51242_interface_init(void);
 
 uint16_t SGM51242_write_register(uint16_t reg_addr, uint16_t value);
+
 uint16_t SGM51242_read_register(uint16_t addr);
+
 uint16_t SGM51242_read_ADC(void);
 
-/**
- * @brief 单通道采样
- * 
- */
 void SGM51242_ADC_Single_Sampling(void);//Multi-Channel ADC Conversion Sequence,No Repeat
-/**
- * @brief 多通道采样
- * 
- */
+
 void SGM51242_ADC_Repeat_Sampling(void);//Multi-Channel ADC Conversion Sequence, Repeat
+
+void SGM51242_init(void);
+
 #if __cplusplus
 }
 #endif
