@@ -334,19 +334,19 @@ int main(int argc, char *argv[])
 	gpio_init(E_GPIO_MODE_UI);
 	// 初始化SGM51242
     SGM51242_init();
-    usleep(2*1000);
+    usleep(1000*1000);
 #if SGM51620
     // 初始化SGM51620
     SGM51620_init();
-    usleep(2*1000);
+    usleep(1000*1000);
 #endif
 	while(1)
 	{
     fflush(stdout);
-    usleep(200*1000);
-    // SGM51242_ADC_Repeat_Sampling();
+    usleep(100*1000);
     SGM51242_ADC_Single_Sampling();
 #if SGM51620
+    usleep(100*1000);
     SGM51620_read_adc();
 #endif
 	}
