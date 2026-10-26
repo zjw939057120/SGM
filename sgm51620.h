@@ -7,8 +7,23 @@
 extern "C" {
 #endif
 
-// ADC 原始数据缓存
-static uint16_t g_adc_raw[12] = {0};
+// GPIO模式定义
+#define GPIO_MODE_DI 1
+#define GPIO_MODE_AI 2
+#define GPIO_MODE_UI 3
+
+typedef struct {
+    uint8_t mode;//GPIO模式
+    uint32_t gpio[3];//GPIO引脚
+} gpio_group_t;
+
+// GPIO组数量
+#define GPIO_GROUP_COUNT 12
+// GPIO组定义（实体定义在 sgm51620.c）
+extern gpio_group_t g_gpio_group[GPIO_GROUP_COUNT];
+
+// ADC 原始数据缓存（实体定义在 sgm51620.c）
+extern uint16_t g_adc_raw[GPIO_GROUP_COUNT];
 
 // ===== 0-10V 输入分压校准 =====
 // 硬件: V_in(0-10V) --[R1]-- INx --[R2]-- GND
@@ -24,22 +39,8 @@ typedef struct {
     float v_adc_at_10v;   // 输入 10V 时的 ADC 读数（确定分压比 + gain）
 } divider_calib_t;
 
-// 8 通道独立校准数据（先用占位值，测完后填实际值）
-static const divider_calib_t g_divider_calib[12] = {
-    [0] = {.v_adc_at_0v = 0.000f, .v_adc_at_10v = 4.000f},  // IN0 待测
-    [1] = {.v_adc_at_0v = 0.000f, .v_adc_at_10v = 4.000f},  // IN1 待测
-    [2] = {.v_adc_at_0v = 0.000f, .v_adc_at_10v = 4.000f},  // IN2 待测
-    [3] = {.v_adc_at_0v = 0.000f, .v_adc_at_10v = 4.000f},  // IN3 待测
-    [4] = {.v_adc_at_0v = 0.000f, .v_adc_at_10v = 4.000f},  // IN4 待测
-    [5] = {.v_adc_at_0v = 0.000f, .v_adc_at_10v = 4.000f},  // IN5 待测
-    [6] = {.v_adc_at_0v = 0.000f, .v_adc_at_10v = 4.000f},  // IN6 待测
-    [7] = {.v_adc_at_0v = 0.000f, .v_adc_at_10v = 4.000f},  // IN7 待测
-    [8] = {.v_adc_at_0v = 0.000f, .v_adc_at_10v = 4.000f},  // IN8 待测
-    [9] = {.v_adc_at_0v = 0.000f, .v_adc_at_10v = 4.000f},  // IN9 待测
-    [10] = {.v_adc_at_0v = 0.000f, .v_adc_at_10v = 4.000f},  // IN10 待测
-    [11] = {.v_adc_at_0v = 0.000f, .v_adc_at_10v = 4.000f},  // IN11 待测
-    
-};
+// 8 通道独立校准数据（先用占位值，测完后填实际值）（实体定义在 sgm51620.c）
+extern const divider_calib_t g_divider_calib[12];
 
 float adc_to_input_calib(float v_adc, const divider_calib_t* cal);
 

@@ -8,6 +8,7 @@
 #include <linux/spi/spidev.h>
 #include "sgm51242.h"
 #include "sgm51620.h"
+#include <pthread.h>
 
 #define SPI_DEVICE "/dev/spidev4.0"
 
@@ -172,7 +173,11 @@ float SGM51242_raw_to_voltage(uint8_t ch)
     return 0.0f;
   }
   float v_adc = (float)(g_adc_raw[ch]&0xFFF)/4095*4.066f;
-  return adc_to_input_calib(v_adc, &g_divider_calib[ch]);
+  //UI模式下, 电压需要乘以分压系数
+  if (g_gpio_group[ch].mode == GPIO_MODE_UI) {
+      return adc_to_input_calib(v_adc, &g_divider_calib[ch]);
+  }
+  return v_adc;
 }
 
 void SGM51242_ADC_Single_Sampling(void)
@@ -284,32 +289,6 @@ void SGM51242_init(void)
 	usleep(2*1000); //After enabling the external reference, delay by 2ms and wait for the external reference to be fully established
 }
 
-// GPIO组数量
-#define GPIO_GROUP_COUNT 11
-// GPIO组定义
-uint32_t gpio_group[GPIO_GROUP_COUNT][3] = {
-    //SGM51620
-    {272,273,274},//AI1_A AI1_B AI1_C
-    {275,276,277},//AI2_A AI2_B AI2_C
-    {278,279,280},//AI3_A AI3_B AI3_C
-    {281,282,283},//AI4_A AI4_B AI4_C
-    //SGM51242
-    {284,285,286},//AI5_A AI5_B AI5_C
-    {287,256,257},//AI6_A AI6_B AI6_C
-    {258,259,260},//AI7_A AI7_B AI7_C
-    {261,262,263},//AI8_A AI8_B AI8_C
-    {264,265,266},//AI9_A AI9_B AI9_C
-    {267,268,269},//AI10_A AI10_B AI10_C
-    {270,271,52}//AI11_A AI11_B AI11_C
-};
-
-enum GPIO_MODE {
-    E_GPIO_MODE_OFF = 0,
-    E_GPIO_MODE_DI = 1,
-    E_GPIO_MODE_AI = 2,
-    E_GPIO_MODE_UI = 3
-};
-
 /**
  * @brief 设置GPIO组模式
  * 
@@ -319,16 +298,19 @@ enum GPIO_MODE {
  * 模式2：AI电流信号输入，GPIO配置：101，0mA输入：电压为0V，10mA输入：电压为2.7V，20mA输入：电压为：4.13V
  * 模式3：UI电压信号输入，GPIO配置：110，0V输入：电压为0V，5V输入：电压为2.7V，10V输入：电压为：4.13V
  */
-void gpio_group_mode(uint32_t *group,uint8_t mode){
-    printf("GPIO=[%d,%d,%d],mode=[%d]\n", group[0], group[1] ,group[2],mode);
+void gpio_group_mode(gpio_group_t *group,uint8_t mode){
+    printf("GPIO=[%d,%d,%d],mode=[%d]\n", group->gpio[0], group->gpio[1] ,group->gpio[2],mode);
+    // 设置GPIO模式
+    group->mode = mode;
+    // 设置GPIO值
     char gpio_cmd[128] = {0};
-        snprintf(gpio_cmd, sizeof(gpio_cmd), "echo %d > /sys/class/gpio/gpio%d/value", mode == E_GPIO_MODE_DI ? 0 : 1, group[0]);
+        snprintf(gpio_cmd, sizeof(gpio_cmd), "echo %d > /sys/class/gpio/gpio%d/value", mode == GPIO_MODE_DI ? 0 : 1, group->gpio[0]);
         system(gpio_cmd);
         usleep(1000*10);
-        snprintf(gpio_cmd, sizeof(gpio_cmd), "echo %d > /sys/class/gpio/gpio%d/value", mode == E_GPIO_MODE_AI ? 0 : 1, group[1]);
+        snprintf(gpio_cmd, sizeof(gpio_cmd), "echo %d > /sys/class/gpio/gpio%d/value", mode == GPIO_MODE_AI ? 0 : 1, group->gpio[1]);
         system(gpio_cmd);
         usleep(1000*10);
-        snprintf(gpio_cmd, sizeof(gpio_cmd), "echo %d > /sys/class/gpio/gpio%d/value", mode == E_GPIO_MODE_UI ? 0 : 1, group[2]);
+        snprintf(gpio_cmd, sizeof(gpio_cmd), "echo %d > /sys/class/gpio/gpio%d/value", mode == GPIO_MODE_UI ? 0 : 1, group->gpio[2]);
         system(gpio_cmd);
         usleep(1000*10);
 }
@@ -336,28 +318,33 @@ void gpio_group_mode(uint32_t *group,uint8_t mode){
 void gpio_init(uint8_t mode) {
     char gpio_cmd[128] = {0};
     for (int i = 0; i < GPIO_GROUP_COUNT; i++) {
-        printf("初始化GPIO=[%d,%d,%d]\n", gpio_group[i][0],gpio_group[i][1],gpio_group[i][2]);
+        // 跳过AI12_A AI12_B AI12_C
+        if (i == 11) {
+            continue;
+        }
+        printf("初始化GPIO=[%d,%d,%d]\n", g_gpio_group[i].gpio[0],g_gpio_group[i].gpio[1],g_gpio_group[i].gpio[2]);
         for (int j = 0; j < 3; j++) {
         // 导出GPIO引脚
-        snprintf(gpio_cmd, sizeof(gpio_cmd), "echo %d > /sys/class/gpio/export", gpio_group[i][j]);
+        snprintf(gpio_cmd, sizeof(gpio_cmd), "echo %d > /sys/class/gpio/export", g_gpio_group[i].gpio[j]);
         system(gpio_cmd);
         usleep(1000*10);
         // 设置GPIO方向为输出
-        snprintf(gpio_cmd, sizeof(gpio_cmd), "echo out > /sys/class/gpio/gpio%d/direction", gpio_group[i][j]);
+        snprintf(gpio_cmd, sizeof(gpio_cmd), "echo out > /sys/class/gpio/gpio%d/direction", g_gpio_group[i].gpio[j]);
         system(gpio_cmd);
         usleep(1000*10);
         }
         //模式1：DI开关信号输入
         //模式2：AI电流信号输入
         //模式3：UI电压信号输入
-        gpio_group_mode(gpio_group[i],mode);
+        gpio_group_mode(&g_gpio_group[i],mode);
     }
 }
 
-int main(int argc, char *argv[]) 
+
+void *adc_sample_thread_func(void *arg)
 {
     // 初始化GPIO
-	gpio_init(E_GPIO_MODE_UI);
+	gpio_init(GPIO_MODE_UI);
 	// 初始化SGM51242
     SGM51242_init();
     usleep(1000*1000);
@@ -378,4 +365,13 @@ int main(int argc, char *argv[])
 	}
 	return 0;
 }
-
+int main(void) {
+  pthread_t thread;
+  // 创建线程
+  pthread_create(&thread, NULL, adc_sample_thread_func, NULL);
+  // 主线程继续执行
+  while (1) {
+    sleep(60);
+  }
+  return 0;
+}

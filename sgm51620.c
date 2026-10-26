@@ -53,6 +53,45 @@ const uint8_t channel_configs[] = {CHANNEL_AIN0, CHANNEL_AIN1, CHANNEL_AIN2,
 // 全局 SPI 文件描述符
 static int spi_fd = -1;
 
+// ===== 共享全局变量实体定义 =====
+
+// GPIO组定义
+gpio_group_t g_gpio_group[GPIO_GROUP_COUNT] = {
+    //SGM51620
+    {0,{272,273,274}},//AI1_A AI1_B AI1_C
+    {0,{275,276,277}},//AI2_A AI2_B AI2_C
+    {0,{278,279,280}},//AI3_A AI3_B AI3_C
+    {0,{281,282,283}},//AI4_A AI4_B AI4_C
+    //SGM51242
+    {0,{284,285,286}},//AI5_A AI5_B AI5_C
+    {0,{287,256,257}},//AI6_A AI6_B AI6_C
+    {0,{258,259,260}},//AI7_A AI7_B AI7_C
+    {0,{261,262,263}},//AI8_A AI8_B AI8_C
+    {0,{264,265,266}},//AI9_A AI9_B AI9_C
+    {0,{267,268,269}},//AI10_A AI10_B AI10_C
+    {0,{270,271,52}},//AI11_A AI11_B AI11_C
+    {0,{0,0,0}}//AI12_A AI12_B AI12_C
+};
+
+// ADC 原始数据缓存
+uint16_t g_adc_raw[GPIO_GROUP_COUNT] = {0};
+
+// 8 通道独立校准数据（先用占位值，测完后填实际值）
+const divider_calib_t g_divider_calib[GPIO_GROUP_COUNT] = {
+    [0] = {.v_adc_at_0v = 0.000f, .v_adc_at_10v = 4.000f},  // IN0 待测
+    [1] = {.v_adc_at_0v = 0.000f, .v_adc_at_10v = 4.000f},  // IN1 待测
+    [2] = {.v_adc_at_0v = 0.000f, .v_adc_at_10v = 4.000f},  // IN2 待测
+    [3] = {.v_adc_at_0v = 0.000f, .v_adc_at_10v = 4.000f},  // IN3 待测
+    [4] = {.v_adc_at_0v = 0.000f, .v_adc_at_10v = 4.000f},  // IN4 待测
+    [5] = {.v_adc_at_0v = 0.000f, .v_adc_at_10v = 4.000f},  // IN5 待测
+    [6] = {.v_adc_at_0v = 0.000f, .v_adc_at_10v = 4.000f},  // IN6 待测
+    [7] = {.v_adc_at_0v = 0.000f, .v_adc_at_10v = 4.000f},  // IN7 待测
+    [8] = {.v_adc_at_0v = 0.000f, .v_adc_at_10v = 4.000f},  // IN8 待测
+    [9] = {.v_adc_at_0v = 0.000f, .v_adc_at_10v = 4.000f},  // IN9 待测
+    [10] = {.v_adc_at_0v = 0.000f, .v_adc_at_10v = 4.000f},  // IN10 待测
+    [11] = {.v_adc_at_0v = 0.000f, .v_adc_at_10v = 4.000f},  // IN11 待测
+};
+
 // 全局识别得到的 VREF 实际值（启动诊断后更新）
 static float g_vref_actual = VREF_NOMINAL;
 
@@ -281,7 +320,11 @@ float SGM51620_raw_to_voltage(uint8_t ch) {
   }
   // 用识别得到的 VREF 计算 AINx 实际电压
   float v_adc = (float)g_adc_raw[ch] * g_lsb_actual;
-  return adc_to_input_calib(v_adc, &g_divider_calib[ch]);
+  //UI模式下, 电压需要乘以分压系数
+  if (g_gpio_group[ch].mode == GPIO_MODE_UI) {
+      return adc_to_input_calib(v_adc, &g_divider_calib[ch]);
+  }
+  return v_adc;
 }
 
 
