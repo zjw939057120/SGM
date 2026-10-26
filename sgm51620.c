@@ -321,9 +321,9 @@ float SGM51620_raw_to_voltage(uint8_t ch) {
   // 用识别得到的 VREF 计算 AINx 实际电压
   float v_adc = (float)g_adc_raw[ch] * g_lsb_actual;
   //UI模式下, 电压需要乘以分压系数
-  if (g_gpio_group[ch].mode == GPIO_MODE_UI) {
-      return adc_to_input_calib(v_adc, &g_divider_calib[ch]);
-  }
+  // if (g_gpio_group[ch].mode == GPIO_MODE_UI) {
+  //     return adc_to_input_calib(v_adc, &g_divider_calib[ch]);
+  // }
   return v_adc;
 }
 

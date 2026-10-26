@@ -169,14 +169,14 @@ uint16_t SGM51242_read_ADC(void)
 
 float SGM51242_raw_to_voltage(uint8_t ch)
 {
-  if (ch < 3 || ch > 12) {
+  if (ch < 4 || ch > 12) {
     return 0.0f;
   }
   float v_adc = (float)(g_adc_raw[ch]&0xFFF)/4095*4.066f;
   //UI模式下, 电压需要乘以分压系数
-  if (g_gpio_group[ch].mode == GPIO_MODE_UI) {
-      return adc_to_input_calib(v_adc, &g_divider_calib[ch]);
-  }
+  //   if (g_gpio_group[ch].mode == GPIO_MODE_UI) {
+  //       return adc_to_input_calib(v_adc, &g_divider_calib[ch]);
+  //   }
   return v_adc;
 }
 
@@ -292,13 +292,14 @@ void SGM51242_init(void)
 /**
  * @brief 设置GPIO组模式
  * 
- * @param group GPIO组指针
- * @param mode
+ * @param ch GPIO通道号
+ * @param mode GPIO模式
  * 模式1：DI开关信号输入，GPIO配置：011，短接输入：电压为0V，断开输入：电压为：4.13V
  * 模式2：AI电流信号输入，GPIO配置：101，0mA输入：电压为0V，10mA输入：电压为2.7V，20mA输入：电压为：4.13V
  * 模式3：UI电压信号输入，GPIO配置：110，0V输入：电压为0V，5V输入：电压为2.7V，10V输入：电压为：4.13V
  */
-void gpio_group_mode(gpio_group_t *group,uint8_t mode){
+void gpio_group_mode(uint8_t ch,uint8_t mode){
+    gpio_group_t *group = &g_gpio_group[ch];
     printf("GPIO=[%d,%d,%d],mode=[%d]\n", group->gpio[0], group->gpio[1] ,group->gpio[2],mode);
     // 设置GPIO模式
     group->mode = mode;
@@ -336,7 +337,7 @@ void gpio_init(uint8_t mode) {
         //模式1：DI开关信号输入
         //模式2：AI电流信号输入
         //模式3：UI电压信号输入
-        gpio_group_mode(&g_gpio_group[i],mode);
+        gpio_group_mode(i,mode);
     }
 }
 

@@ -44,6 +44,14 @@ void SGM51242_ADC_Single_Sampling(void);//Multi-Channel ADC Conversion Sequence,
 
 void SGM51242_ADC_Repeat_Sampling(void);//Multi-Channel ADC Conversion Sequence, Repeat
 
+/**
+ * @brief 设置GPIO组模式
+ * 
+ * @param ch GPIO通道号
+ * @param mode GPIO模式
+ */
+void gpio_group_mode(uint8_t ch,uint8_t mode);
+
 void SGM51242_init(void);
 
 #if __cplusplus
