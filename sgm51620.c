@@ -10,6 +10,7 @@
 #include <string.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
+#include "sgm51620.h"
 
 // SPI设备节点
 #define SPI_DEVICE "/dev/spidev4.1"
@@ -55,35 +56,9 @@ static int spi_fd = -1;
 // 全局识别得到的 VREF 实际值（启动诊断后更新）
 static float g_vref_actual = VREF_NOMINAL;
 
-// ===== 0-10V 输入分压校准 =====
-// 硬件: V_in(0-10V) --[R1]-- AINx --[R2]-- GND
-#define DIVIDER_R1     220.0f   // 串联电阻 (KΩ)
-#define DIVIDER_R2     150.0f   // 并联电阻 (KΩ)
-#define V_INPUT_FSR    10.0f    // 输入电压满量程 (V)
-// 理论分压比 = R2 / (R1 + R2)
-#define DIVIDER_RATIO_THEORY  (DIVIDER_R2 / (DIVIDER_R1 + DIVIDER_R2))
-
-// 单点校准值（基于用户实测: 4V → 1.609127V，仅作参考,代码未使用）
-// 系数 = 1.609127 / 4.0 = 0.402282
-// #define DIVIDER_RATIO_MEASURED  0.402282f
-
-// 两点校准结构（生产时实测填入，精度高于单点校准）
-typedef struct {
-    float v_adc_at_0v;    // 输入 0V 时的 ADC 读数（去掉 ADC offset）
-    float v_adc_at_10v;   // 输入 10V 时的 ADC 读数（确定分压比 + gain）
-} divider_calib_t;
-
-// 4 通道独立校准数据（先用占位值，测完后填实际值）
-static const divider_calib_t g_divider_calib[CHANNEL_COUNT] = {
-    [0] = {.v_adc_at_0v = 0.000f, .v_adc_at_10v = 4.000f},  // AIN0 待测
-    [1] = {.v_adc_at_0v = 0.000f, .v_adc_at_10v = 4.000f},  // AIN1 待测
-    [2] = {.v_adc_at_0v = 0.000f, .v_adc_at_10v = 4.000f},  // AIN2 待测
-    [3] = {.v_adc_at_0v = 0.000f, .v_adc_at_10v = 4.000f},  // AIN3 待测
-};
-
 // V_adc → V_in(0-10V) 两点校准（精度高, 消掉电阻精度 + ADC offset）
 // 温度补偿在应用层做, 这里只输出原始校准后的 V_in
-static inline float adc_to_input_calib(float v_adc, const divider_calib_t* cal) {
+float adc_to_input_calib(float v_adc, const divider_calib_t* cal) {
     float span = cal->v_adc_at_10v - cal->v_adc_at_0v;
     if (span < 1e-6f) return 0.0f;  // 防止除零
     return (v_adc - cal->v_adc_at_0v) / span * V_INPUT_FSR;
@@ -96,8 +71,8 @@ void adc_write_reg(uint8_t reg_addr, uint8_t data);
 uint8_t adc_read_reg(uint8_t reg_addr);
 void adc_set_channel(uint8_t channel_cfg);
 void adc_start_conversion(void);
-int16_t adc_read_data(void);
-float adc_convert_to_temp(int16_t raw_data);
+uint16_t adc_read_data(void);
+float adc_convert_to_temp(uint16_t raw_data);
 float adc_identify_vref(void);
 
 // SPI初始化（打开设备并配置参数）
@@ -198,7 +173,7 @@ void adc_start_conversion(void) {
 }
 
 // 读取ADC转换结果（16位）
-int16_t adc_read_data(void) {
+uint16_t adc_read_data(void) {
   uint8_t tx[3] = {0};
   uint8_t rx[3] = {0};
 
@@ -209,13 +184,13 @@ int16_t adc_read_data(void) {
   spi_transfer(tx, rx, 3);
 
   // 组合2字节数据（MSB先）
-  return (int16_t)((rx[1] << 8) | rx[2]);
+  return (uint16_t)(((uint16_t)rx[1] << 8) | (uint16_t)rx[2]);
 }
 
 // 将温度传感器原始数据转换为温度值（℃）
-float adc_convert_to_temp(int16_t raw_data) {
+float adc_convert_to_temp(uint16_t raw_data) {
   // 温度数据为14位，左对齐在16位结果中
-  int16_t temp_data = raw_data >> 2;
+  uint16_t temp_data = raw_data >> 2;
   // 1LSB = 0.03125℃，负数为二进制补码
   if (temp_data & 0x2000) {  // 最高位为1（负数）
     temp_data = -(~temp_data + 1);
@@ -255,15 +230,15 @@ float adc_identify_vref(void) {
 
   // 4. 第一次转换有通道切换延迟, 取 16 次平均
   const int N = 16;
-  int32_t samples[16];
-  int32_t sum = 0;
+  uint32_t samples[16];
+  uint32_t sum = 0;
   for (int i = 0; i < N; i++) {
     adc_start_conversion();
     usleep(ADC_CONV_WAIT_US);
     samples[i] = adc_read_data();
     sum += samples[i];
   }
-  int16_t avg_raw = (int16_t)(sum / N);
+  uint16_t avg_raw = (uint16_t)(sum / N);
 
   // 5. 换算: VREF_actual = avg_raw × 4 × (2 × VREF_int) / 65536
   //      推导: 1 LSB = 2 × VREF_int / 65536
@@ -298,15 +273,25 @@ float adc_identify_vref(void) {
   }
 }
 
-float lsb_actual = 0.0f;
+float g_lsb_actual = 0.0f;
+
+float SGM51620_raw_to_voltage(uint8_t ch) {
+  if (ch >= CHANNEL_COUNT) {
+    return 0.0f;
+  }
+  // 用识别得到的 VREF 计算 AINx 实际电压
+  float v_adc = (float)g_adc_raw[ch] * g_lsb_actual;
+  return adc_to_input_calib(v_adc, &g_divider_calib[ch]);
+}
+
 
 void SGM51620_read_adc(void) {
     // 读取温度传感器数据（温度传感器强制使用内部 2.048V 参考, 与 VREF 配置无关）
-    adc_write_reg(0x01, 0x06);  // REG1: TS=1 启用温度传感器
-    adc_start_conversion();
-    usleep(ADC_CONV_WAIT_US);
-    int16_t temp_raw = adc_read_data();
-    float temperature = adc_convert_to_temp(temp_raw);
+    // adc_write_reg(0x01, 0x06);  // REG1: TS=1 启用温度传感器
+    // adc_start_conversion();
+    // usleep(ADC_CONV_WAIT_US);
+    // int16_t temp_raw = adc_read_data();
+    // float temperature = adc_convert_to_temp(temp_raw);
     // 切回 ADC 连续转换模式（写寄存器自动触发一次转换, 连续模式继续）
     adc_write_reg(0x01, 0x04);
     usleep(ADC_CONV_WAIT_US);  // 等第一次转换
@@ -317,21 +302,16 @@ void SGM51620_read_adc(void) {
       adc_set_channel(channel_configs[i]);
       usleep(ADC_CONV_WAIT_US);
 
-      // 读取当前通道ADC数据
-      int16_t adc_raw = adc_read_data();
-
-      // 用识别得到的 VREF 计算 AINx 实际电压
-      float v_adc = (float)adc_raw * lsb_actual;
+      // 保存原始数据到缓存
+      g_adc_raw[i] = adc_read_data();
+      
       // 反推 0-10V 原始输入（温度补偿在应用层做, 这里只做分压反推）
-      float v_in = adc_to_input_calib(v_adc, &g_divider_calib[i]);
-      printf("[%s] Raw: 0x%04X, V_adc=%.4fV, V_in=%.3fV\n",
-             channel_names[i], adc_raw, v_adc, v_in);
-      usleep(100000);
+      float v_in = SGM51620_raw_to_voltage(i);
+      printf("[%s] Raw: 0x%04X, V_adc=%.3fV\n",
+             channel_names[i], g_adc_raw[i], v_in);
+      usleep(6);
     }
-
-    printf("[TEMP] %.2f℃\n", temperature);
-    printf("--------------------------------------------\n");
-    usleep(1000000);  // 暂停1秒后继续循环
+    fflush(stdout);
 }
 
 int SGM51620_init(void) {
@@ -370,8 +350,8 @@ int SGM51620_init(void) {
   }
 
   // 5. 用识别的 VREF 算 LSB（之后所有电压计算都用这个）
-  lsb_actual = ADC_LSB_FROM_VREF(g_vref_actual);
-  printf("[VREF-USED] VREF=%.3fV, 1LSB=%.3f uV\n", g_vref_actual, lsb_actual * 1e6f);
+  g_lsb_actual = ADC_LSB_FROM_VREF(g_vref_actual);
+  printf("[VREF-USED] VREF=%.3fV, 1LSB=%.3f uV\n", g_vref_actual, g_lsb_actual * 1e6f);
   printf("=============================================================\n");
 
   return 0;

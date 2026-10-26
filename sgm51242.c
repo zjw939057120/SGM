@@ -7,9 +7,7 @@
 #include <sys/ioctl.h>
 #include <linux/spi/spidev.h>
 #include "sgm51242.h"
-#if SGM51620
 #include "sgm51620.h"
-#endif
 
 #define SPI_DEVICE "/dev/spidev4.0"
 
@@ -168,6 +166,15 @@ uint16_t SGM51242_read_ADC(void)
 	
 }
 
+float SGM51242_raw_to_voltage(uint8_t ch)
+{
+  if (ch < 3 || ch > 12) {
+    return 0.0f;
+  }
+  float v_adc = (float)(g_adc_raw[ch]&0xFFF)/4095*4.066f;
+  return adc_to_input_calib(v_adc, &g_divider_calib[ch]);
+}
+
 void SGM51242_ADC_Single_Sampling(void)
 {
 	uint16_t reg_val;
@@ -177,8 +184,9 @@ void SGM51242_ADC_Single_Sampling(void)
 	uint8_t adc_channels = 8;
 	
 	uint16_t i;
-	uint8_t data_chx;	
-	double data_val;
+	uint8_t data_chx;
+    uint8_t chx_offset = 4;	
+	// double data_val;
 	
   adc_seq = CHX;
 	SGM51242_write_register(ADC_CONFIG, adc_seq); //ADC Pin Configuration Register,all channels are configured for ADC input
@@ -195,10 +203,28 @@ void SGM51242_ADC_Single_Sampling(void)
 	{
 		adc_val = SGM51242_read_ADC();
 		data_chx = adc_val >> 12;
-		data_val = (double)(adc_val&0xFFF)/4095*4.066f;
-		printf("CH%d = %.3fV ",data_chx,data_val);
+		// data_val = (double)(adc_val&0xFFF)/4095*4.066f;
+        // 保存原始数据到缓存
+        switch (data_chx) {
+        case 0:
+        case 1:
+        case 2:
+        case 3:
+        case 4:
+        case 5:
+        case 6:
+        case 7: {
+            // 保存原始数据到缓存
+            g_adc_raw[data_chx + chx_offset] = adc_val;
+        }
+            break;
+        default:
+            break;
+        }
+		printf("CH%d = %.3fV ",data_chx,SGM51242_raw_to_voltage(data_chx + chx_offset));
 	} 
 	printf("\r\n");
+    fflush(stdout);
 	
 	// clear sequencer
 	SGM51242_write_register(ADC_SEQUENCE_CTRL, 0x0000);
@@ -335,20 +361,20 @@ int main(int argc, char *argv[])
 	// 初始化SGM51242
     SGM51242_init();
     usleep(1000*1000);
-#if SGM51620
+
     // 初始化SGM51620
     SGM51620_init();
     usleep(1000*1000);
-#endif
+
 	while(1)
 	{
-    fflush(stdout);
+    // 读取SGM51242数据
     usleep(100*1000);
     SGM51242_ADC_Single_Sampling();
-#if SGM51620
+
+    // 读取SGM51620数据
     usleep(100*1000);
     SGM51620_read_adc();
-#endif
 	}
 	return 0;
 }

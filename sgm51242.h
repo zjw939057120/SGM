@@ -32,6 +32,14 @@ uint16_t SGM51242_read_register(uint16_t addr);
 
 uint16_t SGM51242_read_ADC(void);
 
+/**
+ * @brief 将原始 ADC 读数转换为电压值
+ * 
+ * @param ch 通道号
+ * @return float 电压值（单位：V）
+ */
+float SGM51242_raw_to_voltage(uint8_t ch);
+
 void SGM51242_ADC_Single_Sampling(void);//Multi-Channel ADC Conversion Sequence,No Repeat
 
 void SGM51242_ADC_Repeat_Sampling(void);//Multi-Channel ADC Conversion Sequence, Repeat
